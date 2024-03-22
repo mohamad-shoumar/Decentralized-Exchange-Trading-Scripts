@@ -8,6 +8,9 @@ import logging
 import asyncio
 from typing import List, AsyncIterator, Tuple, Iterator
 from asyncstdlib import enumerate
+import time
+import httpx
+from typing import Any
 
 from solders.pubkey import Pubkey
 from solders.rpc.config import RpcTransactionLogsFilterMentions
@@ -17,6 +20,7 @@ from solana.rpc.commitment import Finalized
 from solana.rpc.api import Client
 from solana.exceptions import SolanaRpcException
 from websockets.exceptions import ConnectionClosedError, ProtocolError
+from httpx import AsyncClient
 
 # Type hinting imports
 from solana.rpc.commitment import Commitment
@@ -27,8 +31,8 @@ from solders.transaction_status import UiPartiallyDecodedInstruction, ParsedInst
 
 # Raydium Liquidity Pool V4
 RaydiumLPV4 = "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8"
-URI = "https://api.mainnet-beta.solana.com"  # "https://api.devnet.solana.com" | "https://api.mainnet-beta.solana.com"
-WSS = "wss://api.mainnet-beta.solana.com"  # "wss://api.devnet.solana.com" | "wss://api.mainnet-beta.solana.com"
+URI = "https://mainnet.helius-rpc.com/?api-key=b0030426-49da-4a2a-ab94-ef8961452c7c"  # "https://api.devnet.solana.com" | "https://api.mainnet-beta.solana.com"
+WSS = "wss://mainnet.helius-rpc.com/?api-key=b0030426-49da-4a2a-ab94-ef8961452c7c"  # "wss://api.devnet.solana.com" | "wss://api.mainnet-beta.solana.com"
 solana_client = Client(URI)
 # Raydium function call name, look at raydium-amm/program/src/instruction.rs
 log_instruction = "initialize2"
@@ -39,9 +43,8 @@ seen_signatures = set()
 logging.basicConfig(filename='app.log', filemode='a', level=logging.DEBUG)
 # Writes responses from socket to messages.json
 # Writes responses from http req to  transactions.json
-
-async def main():
-    """The client as an infinite asynchronous iterator:"""
+seen_tokens = set()
+async def websocket_listener_task():
     async for websocket in connect(WSS):
         try:
             subscription_id = await subscribe_to_logs(
@@ -49,29 +52,26 @@ async def main():
                 RpcTransactionLogsFilterMentions(RaydiumLPV4),
                 Finalized
             )
-            # Change level debugging to INFO
-            logging.getLogger().setLevel(logging.INFO)  # Logging
             async for i, signature in enumerate(process_messages(websocket, log_instruction)):  # type: ignore
-                logging.info(f"{i=}")  # Logging
+                logging.info(f"{i=}")
                 try:
                     get_tokens(signature, RaydiumLPV4)
-                except SolanaRpcException as err:
-                    # Omitting httpx.HTTPStatusError: Client error '429 Too Many Requests'
-                    # Sleep 5 sec, and try connect again
-                    # Start logging
-                    logging.exception(err)
-                    logging.info("sleep for 5 seconds and try again")
-                    # End logging
+                except Exception as e:
+                    logging.exception(e)
                     sleep(5)
                     continue
-        except (ProtocolError, ConnectionClosedError) as err:
-            # Restart socket connection if ProtocolError: invalid status code
-            logging.exception(err)  # Logging
-            print(f"Danger! Danger!", err)
+        except Exception as e:
+            logging.exception(e)
             continue
         except KeyboardInterrupt:
             if websocket:
                 await websocket.logs_unsubscribe(subscription_id)
+                break
+            
+async def main():
+    listener_task = asyncio.create_task(websocket_listener_task())
+    dexscreener_task = asyncio.create_task(call_dexscreener_api())
+    await asyncio.gather(listener_task, dexscreener_task)
 
 
 async def subscribe_to_logs(websocket: SolanaWsClientProtocol, 
@@ -115,35 +115,83 @@ async def process_messages(websocket: SolanaWsClientProtocol,
 def get_msg_value(msg: List[LogsNotification]) -> RpcLogsResponse:
     return msg[0].result.value
 
-
 def get_tokens(signature: Signature, RaydiumLPV4: Pubkey) -> None:
     """httpx.HTTPStatusError: Client error '429 Too Many Requests' 
     for url 'https://api.mainnet-beta.solana.com'
     For more information check: https://httpstatuses.com/429
 
     """
-    # if signature not in seen_signatures:
-    #     seen_signatures.add(signature)
-    transaction = solana_client.get_transaction(
-        signature,
-        encoding="jsonParsed",
-        max_supported_transaction_version=0
-    )
-    # Start logging to transactions.json
-    with open("transactions.json", 'a', encoding='utf-8') as raw_transactions:
-        raw_transactions.write(f"signature: {signature}\n")
-        raw_transactions.write(transaction.to_json())        
-        raw_transactions.write("\n ########## \n")
-    # End logging
-    instructions = get_instructions(transaction)
-    filtred_instuctions = instructions_with_program_id(instructions, RaydiumLPV4)
-    logging.info(filtred_instuctions)
-    for instruction in filtred_instuctions:
-        tokens = get_tokens_info(instruction)
-        print_table(tokens)
-        print(f"True, https://solscan.io/tx/{signature}")
+    global seen_signatures
+    if signature in seen_signatures:
+        # If we have already seen this signature, skip processing.
+        logging.info(f"Duplicate transaction skipped: {signature}")
+        return
+    else:
+        # Mark this signature as seen.
+        seen_signatures.add(signature)
+    try:
+        # Attempt to get the transaction
+        transaction = solana_client.get_transaction(
+            signature,
+            encoding='jsonParsed',
+            max_supported_transaction_version=0
+        )
+        
+        # Check if transaction is not None
+        if transaction is None:
+            logging.error(f'No transaction found for signature: {signature}')
+            return
+        
+        # Start logging to transactions.json
+        with open('transactions.json', 'a', encoding='utf-8') as raw_transactions:
+            raw_transactions.write(f'signature: {signature}\\n')
+            raw_transactions.write(transaction.to_json())        
+            raw_transactions.write('\\n ########## \\n')
+        # End logging
+        
+        instructions = get_instructions(transaction)
+        filtered_instructions = instructions_with_program_id(instructions, RaydiumLPV4)
+        logging.info(filtered_instructions)
+        for instruction in filtered_instructions:
+            tokens = get_tokens_info(instruction)
+            print_table(tokens)
+            print(f'True, https://solscan.io/tx/{signature}')
 
-
+    except AttributeError as e:
+        # Catching attribute errors if the 'transaction' is None or doesn't have the expected attributes
+        logging.exception(f'AttributeError with signature {signature}: {e}')
+    except httpx.HTTPStatusError as e:
+        # Handling HTTPStatusError specifically for '429 Too Many Requests'
+        if e.response.status_code == 429:
+            logging.warning('429 Too Many Requests: The request is being rate limited.')
+            # Implementing a basic exponential backoff strategy
+            wait = 5  # Starting with a 1-minute backoff
+            max_attempts = 5
+            for i in range(max_attempts):
+                time.sleep(wait)
+                try:
+                    # Retry the transaction fetch
+                    transaction = solana_client.get_transaction(
+                        signature,
+                        encoding='jsonParsed',
+                        max_supported_transaction_version=0
+                    )
+                    # If success, break out of the retry loop
+                    if transaction is not None:
+                        break
+                except httpx.HTTPStatusError as e:
+                    # If still getting '429', increase the wait time
+                    wait *= 2
+                    logging.warning(f'Retrying after {wait} seconds...')
+                except Exception as e:
+                    # Handle any other exceptions that occur during the retry
+                    logging.exception(f'An unexpected error occurred: {e}')
+                    break
+            else:
+                logging.error('Max retries reached, the transaction could not be fetched.')
+    except Exception as e:
+        # Catching all other exceptions
+        logging.exception(f'An unexpected error occurred with signature {signature}: {e}')
 
 def get_instructions(
     transaction: GetTransactionResp
@@ -164,20 +212,49 @@ def instructions_with_program_id(
     return (instruction for instruction in instructions
             if instruction.program_id == program_id)
 
-
 def get_tokens_info(
     instruction: UiPartiallyDecodedInstruction | ParsedInstruction
 ) -> Tuple[Pubkey, Pubkey, Pubkey]:
+    SOL_TOKEN_ADDRESS = "So11111111111111111111111111111111111111112"
+    global seen_tokens
     accounts = instruction.accounts
     Pair = accounts[4]
     Token0 = accounts[8]
     Token1 = accounts[9]
+    if str(Token0) == SOL_TOKEN_ADDRESS:
+        seen_tokens.add(Token1)
+        logging.info(f"Token1 added to seen_tokens: {Token1}")
+    else:
+        seen_tokens.add(Token0)
+        logging.info(f"Token0 added to seen_tokens: {Token0}")
+    print('seen_tokens: ', seen_tokens)
+
     # Start logging
     logging.info("find LP !!!")
     logging.info(f"\n Token0: {Token0}, \n Token1: {Token1}, \n Pair: {Pair}")
     # End logging
     return (Token0, Token1, Pair)
 
+
+
+async def call_dexscreener_api():
+    while True:
+        tokens_to_query = list(seen_tokens)[:30]  
+        if tokens_to_query:
+            token_addresses = ','.join(str(token) for token in tokens_to_query)
+            url = f"https://api.dexscreener.com/latest/dex/tokens/{token_addresses}"
+            print('url: ', url)
+            try:
+                async with AsyncClient() as client:
+                    response = await client.get(url)
+                    response.raise_for_status()
+                    data = response.json()
+                    print(data)  
+            except Exception as e:
+                logging.error(f"Error fetching data from DexScreener: {e}")
+
+
+        await asyncio.sleep(10)
 
 def print_table(tokens: Tuple[Pubkey, Pubkey, Pubkey]) -> None:
     data = [
