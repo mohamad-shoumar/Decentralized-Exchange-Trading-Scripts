@@ -4,6 +4,9 @@
 
 from time import sleep
 import logging
+import pandas as pd
+from datetime import datetime
+import os
 
 import asyncio
 from typing import List, AsyncIterator, Tuple, Iterator
@@ -11,7 +14,7 @@ from asyncstdlib import enumerate
 import time
 import httpx
 from typing import Any
-
+from httpx import AsyncClient
 from solders.pubkey import Pubkey
 from solders.rpc.config import RpcTransactionLogsFilterMentions
 
@@ -43,7 +46,7 @@ seen_signatures = set()
 logging.basicConfig(filename='app.log', filemode='a', level=logging.DEBUG)
 # Writes responses from socket to messages.json
 # Writes responses from http req to  transactions.json
-seen_tokens = set()
+seen_tokens = []
 async def websocket_listener_task():
     async for websocket in connect(WSS):
         try:
@@ -221,13 +224,13 @@ def get_tokens_info(
     Pair = accounts[4]
     Token0 = accounts[8]
     Token1 = accounts[9]
-    if str(Token0) == SOL_TOKEN_ADDRESS:
-        seen_tokens.add(Token1)
+    if str(Token0) == SOL_TOKEN_ADDRESS and str(Token1) not in seen_tokens:
+        seen_tokens.append(str(Token1))
         logging.info(f"Token1 added to seen_tokens: {Token1}")
-    else:
-        seen_tokens.add(Token0)
+    elif str(Token0) != SOL_TOKEN_ADDRESS and str(Token0) not in seen_tokens:
+        seen_tokens.append(str(Token0))
         logging.info(f"Token0 added to seen_tokens: {Token0}")
-    print('seen_tokens: ', seen_tokens)
+    print('lenghth seen_tokens: ', len(seen_tokens))
 
     # Start logging
     logging.info("find LP !!!")
@@ -238,23 +241,46 @@ def get_tokens_info(
 
 
 async def call_dexscreener_api():
+    batch_size = 30
+    update_interval = 30
+    filename = 'token_data.xlsx'
     while True:
-        tokens_to_query = list(seen_tokens)[:30]  
-        if tokens_to_query:
-            token_addresses = ','.join(str(token) for token in tokens_to_query)
-            url = f"https://api.dexscreener.com/latest/dex/tokens/{token_addresses}"
-            print('url: ', url)
-            try:
-                async with AsyncClient() as client:
-                    response = await client.get(url)
-                    response.raise_for_status()
-                    data = response.json()
-                    print(data)  
-            except Exception as e:
-                logging.error(f"Error fetching data from DexScreener: {e}")
-
-
-        await asyncio.sleep(10)
+        for i in range(0, len(seen_tokens), batch_size):
+            current_batch = seen_tokens[i:i + batch_size]
+            if current_batch:
+                token_addresses = ','.join(str(token) for token in current_batch)
+                url = f"https://api.dexscreener.com/latest/dex/tokens/{token_addresses}"
+                print('url: ', url)
+                try:
+                    async with AsyncClient() as client:
+                        response = await client.get(url)
+                        response.raise_for_status()
+                        data = response.json()
+                        for pair in data.get('pairs', []):
+                                    append_to_excel({
+                                        'timestamp': datetime.now(),
+                                        'DEX ID': pair.get('dexId'),
+                                        # 'Pair Address': pair.get('pairAddress'),
+                                        'Base Token Address': pair['baseToken'].get('address'),
+                                        'Base Token Symbol': pair['baseToken'].get('symbol'),
+                                        'Price USD': pair.get('priceUsd'),
+                                        'h24 buys (txn)':pair.get('priceUsd')
+                                        'h24 sells (txn)': pair.get('h24', {}).get('h24'),
+                                        'Ah24 buy-sells (txn)':
+                                        'Volume 5m': pair.get('volume', {}).get('m5'),
+                                        'Price Change 5m': pair.get('priceChange', {}).get('m5'),
+                                        'fdv': pair.get('fdv')
+                                        'Price Change H24': pair.get('priceChange', {}).get('h24'),
+                                        'Volume h24': pair.get('volume', {}).get('h24'),
+                                        'Liquidity USD': pair.get('liquidity', {}).get('usd'),
+                                    }, filename)
+                        print(data)
+                        
+                except Exception as e:
+                    logging.error(f"Error fetching data from DexScreener: {e}")
+                await asyncio.sleep(1)  
+        
+        await asyncio.sleep(30)
 
 def print_table(tokens: Tuple[Pubkey, Pubkey, Pubkey]) -> None:
     data = [
@@ -269,7 +295,39 @@ def print_table(tokens: Tuple[Pubkey, Pubkey, Pubkey]) -> None:
     for row in data:
         print("│".join(f" {str(row[col]).ljust(15)} " for col in header))
 
+def append_to_excel(data, filename):
 
+    df = pd.DataFrame([data])
+    with pd.ExcelWriter(filename, engine='openpyxl', mode='a' if os.path.exists(filename) else 'w') as writer:
+        df.to_excel(writer, sheet_name='Token Logs', index=False, header=not os.path.exists(filename))
+
+    
 if __name__ == "__main__":
     RaydiumLPV4 = Pubkey.from_string(RaydiumLPV4)
     asyncio.run(main())
+    
+    
+    
+    
+
+    
+# async def call_dexscreener_api():
+#     batch_size = 30
+#     update_interval = 30
+#     while True:
+#         tokens_to_query = seen_tokens[:30]  
+#         if tokens_to_query:
+#             token_addresses = ','.join(str(token) for token in tokens_to_query)
+#             url = f"https://api.dexscreener.com/latest/dex/tokens/{token_addresses}"
+#             print('url: ', url)
+#             try:
+#                 async with AsyncClient() as client:
+#                     response = await client.get(url)
+#                     response.raise_for_status()
+#                     data = response.json()
+#                     print(data)  
+#             except Exception as e:
+#                 logging.error(f"Error fetching data from DexScreener: {e}")
+
+
+#         await asyncio.sleep(10)
