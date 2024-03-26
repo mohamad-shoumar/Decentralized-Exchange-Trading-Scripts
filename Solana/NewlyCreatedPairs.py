@@ -41,15 +41,30 @@ solana_client = Client(URI)
 # Raydium function call name, look at raydium-amm/program/src/instruction.rs
 log_instruction = "initialize2"
 seen_signatures = set()
-
+seen_tokens_filename = 'seen_tokens.txt'
 
 # Init logging
 logging.basicConfig(filename='app.log', filemode='a', level=logging.DEBUG)
 # Writes responses from socket to messages.json
 # Writes responses from http req to  transactions.json
-seen_tokens = []
 filename = 'C:\\Users\\user\\Documents\\token_info.xlsx'
 
+def load_seen_tokens(filename):
+    """Load seen tokens from a file."""
+    try:
+        with open(filename, 'r') as file:
+            tokens = file.read().splitlines()
+            return tokens
+    except FileNotFoundError:
+        return []
+def save_seen_tokens(tokens, filename):
+    """Save the seen tokens list to a file."""
+    with open(filename, 'w') as file:
+        for token in tokens:
+            file.write(f"{token}\n")
+            
+seen_tokens = load_seen_tokens(seen_tokens_filename)
+     
 async def websocket_listener_task():
     async for websocket in connect(WSS):
         try:
@@ -127,7 +142,7 @@ def get_tokens(signature: Signature, RaydiumLPV4: Pubkey) -> None:
     For more information check: https://httpstatuses.com/429
 
     """
-    global seen_signatures
+    global seen_signatures, seen_tokens
     if signature in seen_signatures:
         # If we have already seen this signature, skip processing.
         logging.info(f"Duplicate transaction skipped: {signature}")
@@ -227,14 +242,19 @@ def get_tokens_info(
     Pair = accounts[4]
     Token0 = accounts[8]
     Token1 = accounts[9]
+    token_added = False
     if str(Token0) == SOL_TOKEN_ADDRESS and str(Token1) not in seen_tokens:
         seen_tokens.append(str(Token1))
         logging.info(f"Token1 added to seen_tokens: {Token1}")
+        token_added = True
     elif str(Token0) != SOL_TOKEN_ADDRESS and str(Token0) not in seen_tokens:
         seen_tokens.append(str(Token0))
         logging.info(f"Token0 added to seen_tokens: {Token0}")
+        token_added = True
     print('lenghth seen_tokens: ', len(seen_tokens))
-
+    if token_added:
+        save_seen_tokens(seen_tokens, seen_tokens_filename)
+        print('Length seen_tokens:', len(seen_tokens))
     # Start logging
     logging.info("find LP !!!")
     logging.info(f"\n Token0: {Token0}, \n Token1: {Token1}, \n Pair: {Pair}")
@@ -259,8 +279,10 @@ async def call_dexscreener_api():
                         response = await client.get(url)
                         response.raise_for_status()
                         data = response.json()
+
                         print(data)
-                        append_to_excel(data, filename)     
+                        append_to_excel(data, filename)   
+
                 except Exception as e:
                     logging.error(f"Error fetching data from DexScreener: {e}")
                 await asyncio.sleep(1)  
