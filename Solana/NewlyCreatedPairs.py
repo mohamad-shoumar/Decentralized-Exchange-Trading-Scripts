@@ -260,29 +260,7 @@ async def call_dexscreener_api():
                         response.raise_for_status()
                         data = response.json()
                         print(data)
-                        for pair in data.get('pairs', []):
-                            pair_data = {
-                                'timestamp': datetime.now().isoformat(),
-                                'DEX ID': pair.get('dexId'),
-                                'Base Token Address': pair['baseToken'].get('address'),
-                                'Base Token Symbol': pair['baseToken'].get('symbol'),
-                                'Price USD': pair.get('priceUsd'),
-                                'h24 buys (txn)': pair.get('txns', {}).get('h24', {}).get('buys'),
-                                'h24 sells (txn)': pair.get('txns', {}).get('h24', {}).get('sells'),
-                                'Ah24 buy-sells (txn)': 'd', 
-                                'Volume 5m': pair.get('volume', {}).get('m5'),
-                                'Price Change 5m': pair.get('priceChange', {}).get('m5'),
-                                'fdv': pair.get('fdv'),
-                                'Price Change H24': pair.get('priceChange', {}).get('h24'),
-                                'Volume h24': pair.get('volume', {}).get('h24'),
-                                'Liquidity USD': pair.get('liquidity', {}).get('usd'),
-                            }
-                            print("Appending data to Excel for pair:", pair_data)
-                            append_to_excel(pair_data, filename)
-                        # except Exception as e:
-                        #     logging.exception(f'An unexpected error occurred: {e}')
-                                                              
-                        # timestamp_offset += timedelta(seconds=update_interval)  # Increment timestamp for the next entry     
+                        append_to_excel(data, filename)     
                 except Exception as e:
                     logging.error(f"Error fetching data from DexScreener: {e}")
                 await asyncio.sleep(1)  
@@ -301,30 +279,38 @@ def print_table(tokens: Tuple[Pubkey, Pubkey, Pubkey]) -> None:
     print("|".rjust(18))
     for row in data:
         print("│".join(f" {str(row[col]).ljust(15)} " for col in header))
+def append_to_excel(data, filename):
+    pairs_data = []
+    for pair in data.get('pairs', []):
+        pair_info = {
+            'timestamp': datetime.now().isoformat(),
+            'DEX ID': pair.get('dexId'),
+            'Base Token Address': pair['baseToken'].get('address'),
+            'Base Token Symbol': pair['baseToken'].get('symbol'),
+            'Price USD': pair.get('priceUsd'),
+            'h24 buys (txn)': pair.get('txns', {}).get('h24', {}).get('buys'),
+            'h24 sells (txn)': pair.get('txns', {}).get('h24', {}).get('sells'),
+            'Ah24 buy-sells (txn)': pair.get('txns', {}).get('h24', {}).get('buys', 0) - pair.get('txns', {}).get('h24', {}).get('sells', 0),
+            'Volume 5m': pair.get('volume', {}).get('m5'),
+            'Price Change 5m': pair.get('priceChange', {}).get('m5'),
+            'fdv': pair.get('fdv'),
+            'Price Change H24': pair.get('priceChange', {}).get('h24'),
+            'Volume h24': pair.get('volume', {}).get('h24'),
+            'Liquidity USD': pair.get('liquidity', {}).get('usd'),
+        }
+        pairs_data.append(pair_info)
+    
+    df = pd.DataFrame(pairs_data)
+
+    if os.path.exists(filename):
+        with pd.ExcelWriter(filename, mode='a', engine='openpyxl', if_sheet_exists='overlay') as writer:
+            df.to_excel(writer, index=False, header=False, startrow=writer.sheets['Sheet1'].max_row)
+    else:
+        df.to_excel(filename, index=False)
+
+
 
 if __name__ == "__main__":
     RaydiumLPV4 = Pubkey.from_string(RaydiumLPV4)
     asyncio.run(main())
     
-def append_to_excel(data, filepath, sheet_name='token_info'):
-    try:
-        print(f"Attempting to append data: {data}")
-        df_new_row = pd.DataFrame([data])
-        if not os.path.isfile(filepath):
-            print(f"File {filepath} not found. Creating a new one.")
-            with pd.ExcelWriter(filepath, engine='openpyxl') as writer:
-                df_new_row.to_excel(writer, sheet_name=sheet_name, index=False)
-        else:
-            with pd.ExcelWriter(filepath, engine='openpyxl', mode='a', if_sheet_exists='overlay') as writer:
-                writer.book = load_workbook(filepath)
-                writer.sheets = dict((ws.title, ws) for ws in writer.book.worksheets)
-                startrow = writer.book[sheet_name].max_row
-                
-                df_new_row.to_excel(writer, sheet_name=sheet_name, startrow=startrow, header=False, index=False)
-                
-                writer.book.save(filepath)
-                writer.book.close()
-                
-            print(f"Data appended successfully to {filepath}")
-    except Exception as e:
-        print(f"Failed to append data: {e}")
