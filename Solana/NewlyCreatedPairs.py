@@ -279,10 +279,16 @@ async def call_dexscreener_api():
                         response = await client.get(url)
                         response.raise_for_status()
                         data = response.json()
-
+                        for pair in data.get('pairs', []):
+                            price_change_h24 = pair.get('priceChange', {}).get('h24', 0)
+                            if price_change_h24 < -90:
+                                token_address = pair['baseToken'].get('address')
+                                if token_address in seen_tokens:
+                                    seen_tokens.remove(token_address)
+                                    print(f"Removed token {token_address} due to price change {price_change_h24}%")
                         print(data)
                         append_to_excel(data, filename)   
-
+                        save_seen_tokens(seen_tokens, seen_tokens_filename)  
                 except Exception as e:
                     logging.error(f"Error fetching data from DexScreener: {e}")
                 await asyncio.sleep(1)  
