@@ -5,8 +5,9 @@
 from time import sleep
 import logging
 import pandas as pd
-from datetime import datetime
+from datetime import datetime,timedelta
 import os
+from openpyxl import load_workbook
 
 import asyncio
 from typing import List, AsyncIterator, Tuple, Iterator
@@ -47,6 +48,8 @@ logging.basicConfig(filename='app.log', filemode='a', level=logging.DEBUG)
 # Writes responses from socket to messages.json
 # Writes responses from http req to  transactions.json
 seen_tokens = []
+filename = 'C:\\Users\\user\\Documents\\token_info.xlsx'
+
 async def websocket_listener_task():
     async for websocket in connect(WSS):
         try:
@@ -243,7 +246,7 @@ def get_tokens_info(
 async def call_dexscreener_api():
     batch_size = 30
     update_interval = 30
-    filename = 'token_data.xlsx'
+    timestamp_offset = timedelta(seconds=0)
     while True:
         for i in range(0, len(seen_tokens), batch_size):
             current_batch = seen_tokens[i:i + batch_size]
@@ -256,31 +259,35 @@ async def call_dexscreener_api():
                         response = await client.get(url)
                         response.raise_for_status()
                         data = response.json()
-                        for pair in data.get('pairs', []):
-                                    append_to_excel({
-                                        'timestamp': datetime.now(),
-                                        'DEX ID': pair.get('dexId'),
-                                        # 'Pair Address': pair.get('pairAddress'),
-                                        'Base Token Address': pair['baseToken'].get('address'),
-                                        'Base Token Symbol': pair['baseToken'].get('symbol'),
-                                        'Price USD': pair.get('priceUsd'),
-                                        'h24 buys (txn)':pair.get('priceUsd')
-                                        'h24 sells (txn)': pair.get('h24', {}).get('h24'),
-                                        'Ah24 buy-sells (txn)':
-                                        'Volume 5m': pair.get('volume', {}).get('m5'),
-                                        'Price Change 5m': pair.get('priceChange', {}).get('m5'),
-                                        'fdv': pair.get('fdv')
-                                        'Price Change H24': pair.get('priceChange', {}).get('h24'),
-                                        'Volume h24': pair.get('volume', {}).get('h24'),
-                                        'Liquidity USD': pair.get('liquidity', {}).get('usd'),
-                                    }, filename)
                         print(data)
-                        
+                        for pair in data.get('pairs', []):
+                            pair_data = {
+                                'timestamp': datetime.now().isoformat(),
+                                'DEX ID': pair.get('dexId'),
+                                'Base Token Address': pair['baseToken'].get('address'),
+                                'Base Token Symbol': pair['baseToken'].get('symbol'),
+                                'Price USD': pair.get('priceUsd'),
+                                'h24 buys (txn)': pair.get('txns', {}).get('h24', {}).get('buys'),
+                                'h24 sells (txn)': pair.get('txns', {}).get('h24', {}).get('sells'),
+                                'Ah24 buy-sells (txn)': 'd', 
+                                'Volume 5m': pair.get('volume', {}).get('m5'),
+                                'Price Change 5m': pair.get('priceChange', {}).get('m5'),
+                                'fdv': pair.get('fdv'),
+                                'Price Change H24': pair.get('priceChange', {}).get('h24'),
+                                'Volume h24': pair.get('volume', {}).get('h24'),
+                                'Liquidity USD': pair.get('liquidity', {}).get('usd'),
+                            }
+                            print("Appending data to Excel for pair:", pair_data)
+                            append_to_excel(pair_data, filename)
+                        # except Exception as e:
+                        #     logging.exception(f'An unexpected error occurred: {e}')
+                                                              
+                        # timestamp_offset += timedelta(seconds=update_interval)  # Increment timestamp for the next entry     
                 except Exception as e:
                     logging.error(f"Error fetching data from DexScreener: {e}")
                 await asyncio.sleep(1)  
         
-        await asyncio.sleep(30)
+        await asyncio.sleep(10)
 
 def print_table(tokens: Tuple[Pubkey, Pubkey, Pubkey]) -> None:
     data = [
@@ -295,39 +302,29 @@ def print_table(tokens: Tuple[Pubkey, Pubkey, Pubkey]) -> None:
     for row in data:
         print("│".join(f" {str(row[col]).ljust(15)} " for col in header))
 
-def append_to_excel(data, filename):
-
-    df = pd.DataFrame([data])
-    with pd.ExcelWriter(filename, engine='openpyxl', mode='a' if os.path.exists(filename) else 'w') as writer:
-        df.to_excel(writer, sheet_name='Token Logs', index=False, header=not os.path.exists(filename))
-
-    
 if __name__ == "__main__":
     RaydiumLPV4 = Pubkey.from_string(RaydiumLPV4)
     asyncio.run(main())
     
-    
-    
-    
-
-    
-# async def call_dexscreener_api():
-#     batch_size = 30
-#     update_interval = 30
-#     while True:
-#         tokens_to_query = seen_tokens[:30]  
-#         if tokens_to_query:
-#             token_addresses = ','.join(str(token) for token in tokens_to_query)
-#             url = f"https://api.dexscreener.com/latest/dex/tokens/{token_addresses}"
-#             print('url: ', url)
-#             try:
-#                 async with AsyncClient() as client:
-#                     response = await client.get(url)
-#                     response.raise_for_status()
-#                     data = response.json()
-#                     print(data)  
-#             except Exception as e:
-#                 logging.error(f"Error fetching data from DexScreener: {e}")
-
-
-#         await asyncio.sleep(10)
+def append_to_excel(data, filepath, sheet_name='token_info'):
+    try:
+        print(f"Attempting to append data: {data}")
+        df_new_row = pd.DataFrame([data])
+        if not os.path.isfile(filepath):
+            print(f"File {filepath} not found. Creating a new one.")
+            with pd.ExcelWriter(filepath, engine='openpyxl') as writer:
+                df_new_row.to_excel(writer, sheet_name=sheet_name, index=False)
+        else:
+            with pd.ExcelWriter(filepath, engine='openpyxl', mode='a', if_sheet_exists='overlay') as writer:
+                writer.book = load_workbook(filepath)
+                writer.sheets = dict((ws.title, ws) for ws in writer.book.worksheets)
+                startrow = writer.book[sheet_name].max_row
+                
+                df_new_row.to_excel(writer, sheet_name=sheet_name, startrow=startrow, header=False, index=False)
+                
+                writer.book.save(filepath)
+                writer.book.close()
+                
+            print(f"Data appended successfully to {filepath}")
+    except Exception as e:
+        print(f"Failed to append data: {e}")
