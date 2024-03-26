@@ -1,0 +1,90 @@
+-- phpMyAdmin SQL Dump
+-- version 5.2.1
+-- https://www.phpmyadmin.net/
+--
+-- Host: 127.0.0.1
+-- Generation Time: Mar 26, 2024 at 10:48 AM
+-- Server version: 10.4.32-MariaDB
+-- PHP Version: 8.2.12
+
+SET SQL_MODE = "NO_AUTO_VALUE_ON_ZERO";
+START TRANSACTION;
+SET time_zone = "+00:00";
+
+
+/*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
+/*!40101 SET @OLD_CHARACTER_SET_RESULTS=@@CHARACTER_SET_RESULTS */;
+/*!40101 SET @OLD_COLLATION_CONNECTION=@@COLLATION_CONNECTION */;
+/*!40101 SET NAMES utf8mb4 */;
+
+--
+-- Database: `crypto_bullo`
+--
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `cryptos`
+--
+
+CREATE TABLE `cryptos` (
+  `ID` varchar(256) NOT NULL,
+  `Name` varchar(256) NOT NULL,
+  `CreationTS` timestamp NOT NULL DEFAULT current_timestamp(),
+  `LastUpdateTS` timestamp NOT NULL DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `cryptos`
+--
+
+INSERT INTO `cryptos` (`ID`, `Name`, `CreationTS`, `LastUpdateTS`) VALUES
+('', 'test', '2024-03-26 08:52:23', '2024-03-26 08:52:23'),
+('2afhHw7BgrVrctcWzkxf2Whj58zSzehgpKZFBVyjKJbA1MZZQjrst8HvSSwwijg5gEwUcdExxDTbi5fcRTFZcT3m', '', '2024-03-26 09:28:56', '2024-03-26 09:28:56'),
+('2EvDeaHbYzY6JeqsPtzComZbrBScKbNQGLjWun3sBdgLfbgSBbZoKDuQpkwPxL1yGoboR2SLuNcHoru8ZMp4CLJu', '', '2024-03-26 09:35:34', '2024-03-26 09:35:34'),
+('2gDgo76ZsvwcmgJfAReX2jAHgbvXRDPSBMPBDVh4TkqJM9M2RbC8fswU5JeDA5fyoYdmgWPNnfiorMozSAixyR1T', '', '2024-03-26 09:44:40', '2024-03-26 09:44:40'),
+('38PjkXy8YNyaXCb1bNXysjA22McjgxJh8LBcdSSiPL4UyDJhziyoYEGyTBYBNud3Ta6nKJi4pM2n8bD5QHG4LtDb', '', '2024-03-26 09:37:30', '2024-03-26 09:37:30'),
+('3bF2FjKVC1hExZ5yWkrtLjc8q8ALayFPdWUaiB52awPFCuAGWX2XsozqHtEM9iiwXGRHhhKkaAbcgkLznCmUu68f', '', '2024-03-26 09:33:58', '2024-03-26 09:33:58'),
+('3cyr83z4EUQ6ukgvQSU6EDHkgSkKmj2mQnFNxhvEgKcTYwYvjDBSr3enWxAZAUqNejipMELF89g8uUgxJuZteQZN', '', '2024-03-26 09:23:32', '2024-03-26 09:23:32'),
+('3DfrzYoxwqgDFktvrTLY7kUDyEfxhHxbbt18EAQPHvjn35wReaEQ2DYwExfvnx3jH9T8VDmPx24Lzaq8kUK3YjWJ', '', '2024-03-26 09:46:50', '2024-03-26 09:46:50'),
+('3jSB9C7JB82NhDx4NhF3CLavdzmTK5yH7TJ4NQV9gya8pEEbm9WXhAEt3mG4NpTcR6BY8S5Em3RBQX26Q7oQSc9s', '', '2024-03-26 09:33:57', '2024-03-26 09:33:57'),
+('3pqNpFCY89buYeH4XGv29b3dmZ3rHKnoe3nA5jH7CNyNs1js6TM44p8QSWUykse2T7yfT4QTj26yjXfKgR1JkaKF', '', '2024-03-26 09:37:08', '2024-03-26 09:37:08'),
+('3ypiViob4BgkuZtBweauv6Nc2bs4vurW4DDgGSUoy5Wg6T9siNPdAxoayFCgQ9uFuapV3HMBeJx8y83LHz8cMg3h', '', '2024-03-26 09:34:00', '2024-03-26 09:34:00'),
+('4BXcju686Qp5yPJz9YWajwAsep2ZVUQoTVtvT8JDQqCTQ1vvEXw59QypJm8YAJ17aPkcrrXbYGttkARei63guDyX', '', '2024-03-26 09:26:35', '2024-03-26 09:26:35'),
+('4qqEi7qvMPUdTBEdPGMmWxZBd5nkpZV6j5AGQwncAGcAhSh5TnkYChCE9myKRE8sHwt7pstanAoNNNSpdrbANGVz', '', '2024-03-26 09:28:18', '2024-03-26 09:28:18'),
+('4R57wT5PrhuVouQxztUHvjjShrMXVgP2JAi8RPFAHML8pngrs9jkh58Xb1r9wtYXnMfNP3AQngNcPeAgvNoRk6jL', '', '2024-03-26 09:33:50', '2024-03-26 09:33:50'),
+('4RQVwkfkEJFK3YtkmQEDVy6ApfzLSFYfVovvWrpTovVKiGcnXSwfXErd1cRJVC1q11QjjjgP8KsPpMPXEiUbu2mD', '', '2024-03-26 09:25:20', '2024-03-26 09:25:20'),
+('4sr2CYpUBRtpBRYGsBqSfQ6pHWs1ofP1sfjjErAAzLCUwWk5re8Wn7r9Zjfc3okvkEhxjibVUzitWmyYgFJWA53t', '', '2024-03-26 09:32:11', '2024-03-26 09:32:11'),
+('4V5UxyWvS4s5MkSag9Br9ucpfWVD3wVgepANgcAvs4bwpzP9ywuVnMnyrhporpxR8xR6NDxLfgNxxaqTQk2jFMGc', '', '2024-03-26 09:25:45', '2024-03-26 09:25:45'),
+('4vukVCBGHvgSxaY2ihFmzcYr2qyy6x3iKykSZiKgqwhfsXXwUP1gg6q1dcW8w4ZeMbvEXZH4QQAVQtJqWFdijcVc', '', '2024-03-26 09:43:07', '2024-03-26 09:43:07'),
+('4xKqSqkRjCxdiLFLUL3URtSKz43owRP8hvfbuWyrrA56YPGJqgrn3vdGncuLRQgHC3xj1JY3WvydaMwdVZRwZYFZ', '', '2024-03-26 09:33:02', '2024-03-26 09:33:02'),
+('58EN2abf76N3KeY8eKyXuM1Fc1QsV61TDMbf2R4gwsEcFa38esLMEK6wXRFCPz73pXHwaYYvJC5vRkDx8vh1izgA', '', '2024-03-26 09:33:52', '2024-03-26 09:33:52'),
+('5BrtER5t2NPh2dWEdXebzEZ2SNQL2AaKnmmtm3qwAhSJTmo6x3f6PAT4Fygbi1pT9qpbb7fWSXr2PQGvBzvEFAe7', '', '2024-03-26 09:33:42', '2024-03-26 09:33:42'),
+('5ibpQ1v2uBRo1c4xMQWaL6bprVzwC4kvPKz8CZYFZcDtnc7aPoenfYenULaTnLnkHz2ptZaZXwFn7vkM893g6bZ1', '', '2024-03-26 09:47:05', '2024-03-26 09:47:05'),
+('5iehvngB3BagAgSoun9tVZyfd7bPEFtLLTQheaXyxz7LDUY7D5rBsLCTL5v6K9wTkyozkZZGhRrPCAtawX4jyYDm', '', '2024-03-26 09:35:29', '2024-03-26 09:35:29'),
+('5KKgMaj4aip7ahB3EcqU1GiwESWVi3yT1E6w5KpUSb4H9jZLHzT2Guwiyi8uruxfJtMVDYkWkJzLiGENuSekhD1B', '', '2024-03-26 09:25:37', '2024-03-26 09:25:37'),
+('5yRUJG4gGyTdcEE85yiWYRDiG1kBZQqb4AqsjAKiH6zyQjesxHfj4cLcmLcZLqp2GVgLn2Fv2adB315FxMowZPUk', '', '2024-03-26 09:46:21', '2024-03-26 09:46:21'),
+('5ZPGogw8immNpMNDiX1c2t6d1BtR6zVktdG8DRsjU88SGdCykZ6eFSin3oVRskHnNV4PEzUFaFQ3ksiDDBiC6CuV', '', '2024-03-26 09:34:19', '2024-03-26 09:34:19'),
+('63r6sqquj8bVNEoz1e7sMNxRuH1Rh5AQ5SxsPFB6cuHfrdf3MRazpceSXwtTQMwBow4AKzUNwALQET94any7xvJA', '', '2024-03-26 09:24:46', '2024-03-26 09:24:46'),
+('66ErukmLkULa8k2v6YnXrHjZCRjhkkz3xQR94rr1wGrZoPNtUfuvskbmBCw23NZYrKSQkLGALiY8eHHCvkXMNkZn', '', '2024-03-26 09:44:30', '2024-03-26 09:44:30'),
+('6gTMTfqtw5FKHbMdYHNwznG2xezhfnLdgfoxrpUVEdCrYMBdbSxuo57G3Jq8deJJNaNLhycnM3jXiwo2S4CU5c7', '', '2024-03-26 09:29:30', '2024-03-26 09:29:30'),
+('ox6aJDhZbKgkGtZCZbEhgCi9nnW5QMomqzTip7m2wUq99cPfsfm1D9ygqZhFShQxpbaz2Tw4CVZBs3XkzJBt7US', '', '2024-03-26 09:37:00', '2024-03-26 09:37:00'),
+('qmb9mgCgayg6cC4Fa2mFKL3JDKH6oxv6B117cmLj92kHBGg4PLUKfDucGsLU7Xt7Xay9AWQd7vVMPL4N1ujjmjg', '', '2024-03-26 09:30:31', '2024-03-26 09:30:31'),
+('qNmAJxuypKfNt93khwQ2E6qCL5Z7c18eUWNdeMyugv3L11oeZQoNt58tLV9McU8R9bGDo21WoHW5rL5bPz7KCPj', '', '2024-03-26 09:36:40', '2024-03-26 09:36:40'),
+('uKyTtHc2TTiZkrvvdrc2E7Yh5oe9HX2ZZj3Ebh9xfoDjpPbKNgHuNdVkDrEy8jk2TFcP5sqDucR9z8zvRREKbEt', '', '2024-03-26 09:41:20', '2024-03-26 09:41:20'),
+('uMVznsGyPu15DAnn8yxm31HxJCj9QBNuDf1K4pS8AeebhvBSavnqMoUYG5jo6bzU74viagNNFi6UtuLAELL6UCd', '', '2024-03-26 09:42:04', '2024-03-26 09:42:04');
+
+--
+-- Indexes for dumped tables
+--
+
+--
+-- Indexes for table `cryptos`
+--
+ALTER TABLE `cryptos`
+  ADD PRIMARY KEY (`ID`);
+COMMIT;
+
+/*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;
+/*!40101 SET CHARACTER_SET_RESULTS=@OLD_CHARACTER_SET_RESULTS */;
+/*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
