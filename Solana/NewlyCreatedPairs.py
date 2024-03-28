@@ -1,6 +1,7 @@
 "Detect  New Pools Created on Solana Raydium DEX"
 
 #MAnually see transactions of new pairs GThUX1Atko4tqhN2NaiTazWSeFWMuiUvfFnyJyUghFMJ under spl transfer section
+from save_tokens_to_db import  remove_token_from_database, update_database_with_new_token
 
 from time import sleep
 import logging
@@ -245,10 +246,12 @@ def get_tokens_info(
     token_added = False
     if str(Token0) == SOL_TOKEN_ADDRESS and str(Token1) not in seen_tokens:
         seen_tokens.append(str(Token1))
+        update_database_with_new_token(str(Token1))
         logging.info(f"Token1 added to seen_tokens: {Token1}")
         token_added = True
     elif str(Token0) != SOL_TOKEN_ADDRESS and str(Token0) not in seen_tokens:
         seen_tokens.append(str(Token0))
+        update_database_with_new_token(str(Token0))
         logging.info(f"Token0 added to seen_tokens: {Token0}")
         token_added = True
     print('lenghth seen_tokens: ', len(seen_tokens))
@@ -285,6 +288,7 @@ async def call_dexscreener_api():
                                 token_address = pair['baseToken'].get('address')
                                 if token_address in seen_tokens:
                                     seen_tokens.remove(token_address)
+                                    remove_token_from_database(token_address)
                                     print(f"Removed token {token_address} due to price change {price_change_h24}%")
                         print(data)
                         append_to_excel(data, filename)   
