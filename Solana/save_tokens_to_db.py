@@ -73,6 +73,24 @@ def load_and_save_tokens(filename, connection):
             insert_token(connection, token)
         print(f"{len(tokens)} tokens were inserted into the database.")
 
+def update_database_with_new_token(token_id):
+    conn = connect_to_database(config['host'], config['user'], config['password'], config['database'])
+    if conn is not None:
+        cursor = conn.cursor()
+        cursor.execute("SELECT token_id FROM tokens WHERE token_id = %s", (token_id,))
+        result = cursor.fetchone()
+        if result is None:
+            insert_token(conn, token_id)
+        conn.close()
+
+def remove_token_from_database(token_id):
+    conn = connect_to_database(config['host'], config['user'], config['password'], config['database'])
+    if conn is not None:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM tokens WHERE token_id = %s", (token_id,))
+        conn.commit()
+        conn.close()
+
 if __name__ == "__main__":
     host = "127.0.0.1"
     user = "root"
