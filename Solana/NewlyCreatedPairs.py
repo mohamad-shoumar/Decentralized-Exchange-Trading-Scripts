@@ -90,7 +90,7 @@ async def websocket_listener_task():
                 break
             
 async def main():
-    listener_task = asyncio.create_task(websocket_listener_task())
+    listener_task = asyncio.create_task(robust_websocket_listener_task())
     dexscreener_task = asyncio.create_task(call_dexscreener_api())
     await asyncio.gather(listener_task, dexscreener_task)
 
@@ -336,6 +336,19 @@ def append_to_excel(data, filename):
     else:
         df.to_excel(filename, index=False)
 
+async def robust_websocket_listener_task(attempts=3, delay=10):
+    attempt = 0
+    while attempt < attempts:
+        try:
+            await websocket_listener_task()
+            break  
+        except Exception as e:
+            logging.exception(f"websocket_listener_task failed: {e}")
+            attempt += 1
+            logging.info(f"Retrying websocket_listener_task, attempt {attempt}")
+            await asyncio.sleep(delay)  #
+    else:
+        logging.error("websocket_listener_task failed after maximum retry attempts.")
 
 
 if __name__ == "__main__":
