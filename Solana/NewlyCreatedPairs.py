@@ -288,7 +288,6 @@ async def call_dexscreener_api():
                                 token_address = pair['baseToken'].get('address')
                                 if token_address in seen_tokens:
                                     seen_tokens.remove(token_address)
-                                    remove_token_from_database(token_address)
                                     print(f"Removed token {token_address} due to price change {price_change_h24}%")
                         print(data)
                         append_to_excel(data, filename)   
@@ -314,8 +313,9 @@ def print_table(tokens: Tuple[Pubkey, Pubkey, Pubkey]) -> None:
 def append_to_excel(data, filename):
     pairs_data = []
     for pair in data.get('pairs', []):
+        formatted_timestamp = datetime.now().strftime('%m/%d/%y %H:%M')
         pair_info = {
-            'timestamp': datetime.now().isoformat(),
+            'timestamp': formatted_timestamp,
             'DEX ID': pair.get('dexId'),
             'Base Token Address': pair['baseToken'].get('address'),
             'Base Token Symbol': pair['baseToken'].get('symbol'),
@@ -323,8 +323,8 @@ def append_to_excel(data, filename):
             'h24 buys (txn)': pair.get('txns', {}).get('h24', {}).get('buys'),
             'h24 sells (txn)': pair.get('txns', {}).get('h24', {}).get('sells'),
             'Ah24 buy-sells (txn)': pair.get('txns', {}).get('h24', {}).get('buys', 0) - pair.get('txns', {}).get('h24', {}).get('sells', 0),
-            'Volume 5m': pair.get('volume', {}).get('m5'),
-            'Price Change 5m': pair.get('priceChange', {}).get('m5'),
+            # 'Volume 5m': pair.get('volume', {}).get('m5'),
+            # 'Price Change 5m': pair.get('priceChange', {}).get('m5'),
             'fdv': pair.get('fdv'),
             'Price Change H24': pair.get('priceChange', {}).get('h24'),
             'Volume h24': pair.get('volume', {}).get('h24'),
