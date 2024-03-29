@@ -1,3 +1,4 @@
+import time
 import mysql.connector
 from mysql.connector import Error
 config = {
@@ -45,11 +46,26 @@ def create_table(connection):
     cursor = connection.cursor()
     create_tokens_table = """
     CREATE TABLE IF NOT EXISTS tokens (
-        id INT AUTO_INCREMENT,
-        token_id VARCHAR(255) NOT NULL,
-        UNIQUE(token_id),
+        id INT(11) NOT NULL AUTO_INCREMENT,
+        added_timestamp BIGINT(20) NOT NULL,
+        token_id TEXT NOT NULL,
+        tw_sub INT(11) NOT NULL DEFAULT 0,
+        tw_tweets INT(11) NOT NULL DEFAULT 0,
+        tw_days INT(11) NOT NULL DEFAULT 0,
+        tg_sub INT(11) NOT NULL DEFAULT 0,
+        liqlock VARCHAR(10) NOT NULL,
+        mintaut VARCHAR(10) NOT NULL,
+        mutable VARCHAR(10) NOT NULL,
+        topholder VARCHAR(10) NOT NULL,
+        score VARCHAR(10) NOT NULL,
+        twitter TEXT NOT NULL,
+        telegram TEXT NOT NULL,
+        website TEXT NOT NULL,
+        runner INT(11) DEFAULT 1,
+        fatto_social INT(11) NOT NULL DEFAULT 0,
+        fatto_rug INT(11) NOT NULL DEFAULT 0,
         PRIMARY KEY (id)
-    );
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
     """
     try:
         cursor.execute(create_tokens_table)
@@ -57,32 +73,29 @@ def create_table(connection):
     except Error as e:
         print(f"The error '{e}' occurred")
 
-def insert_token(connection, token_id):
-    cursor = connection.cursor()
-    insert_query = """
-    INSERT INTO tokens (token_id)
-    VALUES (%s) ON DUPLICATE KEY UPDATE token_id = token_id;
-    """
-    cursor.execute(insert_query, (token_id,))
-    connection.commit()
-
-def load_and_save_tokens(filename, connection):
-    with open(filename, 'r') as file:
-        tokens = file.read().splitlines()
-        for token in tokens:
-            insert_token(connection, token)
-        print(f"{len(tokens)} tokens were inserted into the database.")
 
 def update_database_with_new_token(token_id):
-    conn = connect_to_database(config['host'], config['user'], config['password'], config['database'])
-    if conn is not None:
-        cursor = conn.cursor()
-        cursor.execute("SELECT token_id FROM tokens WHERE token_id = %s", (token_id,))
-        result = cursor.fetchone()
-        if result is None:
-            insert_token(conn, token_id)
-        conn.close()
-
+    try:
+        conn = connect_to_database(config['host'], config['user'], config['password'], config['database'])
+        print('conn: ', conn)
+        if conn is not None:
+            unix_timestamp = int(time.time())  
+            print('unix_timestamp: ', unix_timestamp)
+            print('token: ', token_id)
+            cursor = conn.cursor()
+            cursor.execute("SELECT token_id FROM tokens WHERE token_id = %s", (token_id,))
+            result = cursor.fetchone()
+            print('result: ', result)
+            if result is None:
+                insert_query = """
+                INSERT INTO tokens (token_id, added_timestamp)
+                VALUES (%s, %s) ON DUPLICATE KEY UPDATE token_id = token_id, added_timestamp = VALUES(added_timestamp);
+                """
+                cursor.execute(insert_query, (token_id, unix_timestamp))
+                conn.commit()
+            conn.close()
+    except Exception as e:
+        print(f"Error inserting token {token_id}: {e}")
 def remove_token_from_database(token_id):
     conn = connect_to_database(config['host'], config['user'], config['password'], config['database'])
     if conn is not None:
@@ -104,6 +117,5 @@ if __name__ == "__main__":
 
         tokens_file = "seen_tokens.txt"
         
-        load_and_save_tokens(tokens_file, conn)
     else:
         print("Failed to connect to the database")
