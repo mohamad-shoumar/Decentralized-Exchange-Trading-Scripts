@@ -49,7 +49,16 @@ logging.basicConfig(filename='app.log', filemode='a', level=logging.DEBUG)
 # Writes responses from socket to messages.json
 # Writes responses from http req to  transactions.json
 filename = 'C:\\Users\\user\\Documents\\token_info.xlsx'
+all_tokens_filename = 'all_tokens.txt'
 
+def load_all_tokens(filename):
+    """Load all tokens from a file."""
+    try:
+        with open(filename, 'r') as file:
+            tokens = file.read().splitlines()
+            return tokens
+    except FileNotFoundError:
+        return []
 def load_seen_tokens(filename):
     """Load seen tokens from a file."""
     try:
@@ -65,7 +74,8 @@ def save_seen_tokens(tokens, filename):
             file.write(f"{token}\n")
             
 seen_tokens = load_seen_tokens(seen_tokens_filename)
-     
+all_tokens = load_all_tokens(all_tokens_filename)
+
 async def websocket_listener_task():
     async for websocket in connect(WSS):
         try:
@@ -233,12 +243,18 @@ def instructions_with_program_id(
 ) -> Iterator[UiPartiallyDecodedInstruction | ParsedInstruction]:
     return (instruction for instruction in instructions
             if instruction.program_id == program_id)
-
+    
+def save_all_tokens(tokens, filename):
+    """Save the all tokens list to a file."""
+    with open(filename, 'w') as file:
+        for token in tokens:
+            file.write(f"{token}\n")
 def get_tokens_info(
     instruction: UiPartiallyDecodedInstruction | ParsedInstruction
 ) -> Tuple[Pubkey, Pubkey, Pubkey]:
     SOL_TOKEN_ADDRESS = "So11111111111111111111111111111111111111112"
     global seen_tokens
+    global all_tokens
     accounts = instruction.accounts
     Pair = accounts[4]
     Token0 = accounts[8]
@@ -258,6 +274,13 @@ def get_tokens_info(
     if token_added:
         save_seen_tokens(seen_tokens, seen_tokens_filename)
         print('Length seen_tokens:', len(seen_tokens))
+    
+    if str(Token0) not in all_tokens:
+        all_tokens.append(str(Token0))
+        save_all_tokens(all_tokens, all_tokens_filename)
+    if str(Token1) not in all_tokens and str(Token1) != SOL_TOKEN_ADDRESS:
+        all_tokens.append(str(Token1))
+        save_all_tokens(all_tokens, all_tokens_filename)
     # Start logging
     logging.info("find LP !!!")
     logging.info(f"\n Token0: {Token0}, \n Token1: {Token1}, \n Pair: {Pair}")
@@ -323,8 +346,8 @@ def append_to_excel(data, filename):
             'h24 buys (txn)': pair.get('txns', {}).get('h24', {}).get('buys'),
             'h24 sells (txn)': pair.get('txns', {}).get('h24', {}).get('sells'),
             'Ah24 buy-sells (txn)': pair.get('txns', {}).get('h24', {}).get('buys', 0) - pair.get('txns', {}).get('h24', {}).get('sells', 0),
-            # 'Volume 5m': pair.get('volume', {}).get('m5'),
-            # 'Price Change 5m': pair.get('priceChange', {}).get('m5'),
+            'Volume 5m': pair.get('volume', {}).get('m5'),
+            'Price Change 5m': pair.get('priceChange', {}).get('m5'),
             'fdv': pair.get('fdv'),
             'Price Change H24': pair.get('priceChange', {}).get('h24'),
             'Volume h24': pair.get('volume', {}).get('h24'),
