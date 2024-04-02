@@ -1,0 +1,7 @@
+pandas
+mysql-connector-python==8.3.0
+openpyxl==3.1.2
+asyncstdlib==3.12.2
+solders
+httpx
+solana
