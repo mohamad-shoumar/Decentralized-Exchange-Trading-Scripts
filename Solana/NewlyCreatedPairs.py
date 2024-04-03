@@ -43,12 +43,13 @@ solana_client = Client(URI)
 log_instruction = "initialize2"
 seen_signatures = set()
 seen_tokens_filename = 'seen_tokens.txt'
-
+high_volume_tokens = {}
 # Init logging
 logging.basicConfig(filename='app.log', filemode='a', level=logging.DEBUG)
 # Writes responses from socket to messages.json
 # Writes responses from http req to  transactions.json
-filename = 'C:\\Users\\user\\Documents\\token_info.xlsx'
+filename = 'C:\\Users\\\Administrator\\\Documents\\token_info.xlsx'
+high_volume_file = 'C:\\Users\\\Administrator\\\Documents\\high_volume.xlsx'
 all_tokens_filename = 'all_tokens.txt'
 
 def load_all_tokens(filename):
@@ -281,6 +282,13 @@ def get_tokens_info(
     if str(Token1) not in all_tokens and str(Token1) != SOL_TOKEN_ADDRESS:
         all_tokens.append(str(Token1))
         save_all_tokens(all_tokens, all_tokens_filename)
+    if str(Token0) not in high_volume_tokens:
+        high_volume_tokens[str(Token0)] = {'timestamp': datetime.now(), 'met_criteria': False}
+        print(high_volume_tokens)
+    if str(Token1) not in high_volume_tokens and str(Token1) != SOL_TOKEN_ADDRESS:
+        high_volume_tokens[str(Token1)] = {'timestamp': datetime.now(), 'met_criteria': False}
+        print(high_volume_tokens)
+
     # Start logging
     logging.info("find LP !!!")
     logging.info(f"\n Token0: {Token0}, \n Token1: {Token1}, \n Pair: {Pair}")
@@ -306,20 +314,30 @@ async def call_dexscreener_api():
                         response.raise_for_status()
                         data = response.json()
                         for pair in data.get('pairs', []):
+                            print(high_volume_tokens)
+
+                            token_address = pair['baseToken'].get('address')
+                            volume_5m = pair.get('volume', {}).get('m5', 0)
+                            print(volume_5m)
                             price_change_h24 = pair.get('priceChange', {}).get('h24', 0)
+                            if (token_address in high_volume_tokens and
+                                not high_volume_tokens[token_address]['met_criteria'] and
+                                datetime.now() - high_volume_tokens[token_address]['timestamp'] <= timedelta(minutes=15) ):
+                                high_volume_tokens[token_address]['met_criteria'] = True
+                                append_to_high_volume_excel(pair, high_volume_file)
                             if price_change_h24 < -90:
-                                token_address = pair['baseToken'].get('address')
                                 if token_address in seen_tokens:
                                     seen_tokens.remove(token_address)
                                     print(f"Removed token {token_address} due to price change {price_change_h24}%")
                         print(data)
                         append_to_excel(data, filename)   
+
                         save_seen_tokens(seen_tokens, seen_tokens_filename)  
                 except Exception as e:
                     logging.error(f"Error fetching data from DexScreener: {e}")
                 await asyncio.sleep(1)  
         
-        await asyncio.sleep(10)
+        await asyncio.sleep(120)
 
 def print_table(tokens: Tuple[Pubkey, Pubkey, Pubkey]) -> None:
     data = [
@@ -333,35 +351,106 @@ def print_table(tokens: Tuple[Pubkey, Pubkey, Pubkey]) -> None:
     print("|".rjust(18))
     for row in data:
         print("│".join(f" {str(row[col]).ljust(15)} " for col in header))
+
 def append_to_excel(data, filename):
     pairs_data = []
     for pair in data.get('pairs', []):
         formatted_timestamp = datetime.now().strftime('%m/%d/%y %H:%M')
+        pair_created_at = datetime.fromtimestamp(pair.get('pairCreatedAt', 0) / 1000).strftime('%m/%d/%y %H:%M')
+
         pair_info = {
-            'timestamp': formatted_timestamp,
+            'Timestamp': formatted_timestamp,
             'DEX ID': pair.get('dexId'),
             'Base Token Address': pair['baseToken'].get('address'),
             'Base Token Symbol': pair['baseToken'].get('symbol'),
             'Price USD': pair.get('priceUsd'),
-            'h24 buys (txn)': pair.get('txns', {}).get('h24', {}).get('buys'),
-            'h24 sells (txn)': pair.get('txns', {}).get('h24', {}).get('sells'),
-            'Ah24 buy-sells (txn)': pair.get('txns', {}).get('h24', {}).get('buys', 0) - pair.get('txns', {}).get('h24', {}).get('sells', 0),
+            '5m Buys (Txn)': pair.get('txns', {}).get('m5', {}).get('buys'),
+            '5m Sells (Txn)': pair.get('txns', {}).get('m5', {}).get('sells'),
+            '1h Buys (Txn)': pair.get('txns', {}).get('h1', {}).get('buys'),
+            '1h Sells (Txn)': pair.get('txns', {}).get('h1', {}).get('sells'),
+            '6h Buys (Txn)': pair.get('txns', {}).get('h6', {}).get('buys'),
+            '6h Sells (Txn)': pair.get('txns', {}).get('h6', {}).get('sells'),
+            '24h Buys (Txn)': pair.get('txns', {}).get('h24', {}).get('buys'),
+            '24h Sells (Txn)': pair.get('txns', {}).get('h24', {}).get('sells'),
+            '24h Buy-Sells (Txn)': pair.get('txns', {}).get('h24', {}).get('buys', 0) - pair.get('txns', {}).get('h24', {}).get('sells', 0),
             'Volume 5m': pair.get('volume', {}).get('m5'),
+            'Volume 1h': pair.get('volume', {}).get('h1'),
+            'Volume 6h': pair.get('volume', {}).get('h6'),
             'Price Change 5m': pair.get('priceChange', {}).get('m5'),
-            'fdv': pair.get('fdv'),
-            'Price Change H24': pair.get('priceChange', {}).get('h24'),
-            'Volume h24': pair.get('volume', {}).get('h24'),
+            'Price Change 1h': pair.get('priceChange', {}).get('h1'),
+            'Price Change 6h': pair.get('priceChange', {}).get('h6'),
+            'FDV': pair.get('fdv'),
+            'Price Change 24h': pair.get('priceChange', {}).get('h24'),
+            'Volume 24h': pair.get('volume', {}).get('h24'),
             'Liquidity USD': pair.get('liquidity', {}).get('usd'),
+            'pair_created_at' : pair_created_at,
+            'Website': pair.get('website_url')
         }
         pairs_data.append(pair_info)
     
     df = pd.DataFrame(pairs_data)
+    try:
+        if os.path.exists(filename):
+            with pd.ExcelWriter(filename, mode='a', engine='openpyxl', if_sheet_exists='overlay') as writer:
+                df.to_excel(writer, index=False, header=False, startrow=writer.sheets['Sheet1'].max_row)
+        else:
+            df.to_excel(filename, index=False)
+        print("Saved to token info success!")
+    except Exception as e:
+        print(e)
 
-    if os.path.exists(filename):
-        with pd.ExcelWriter(filename, mode='a', engine='openpyxl', if_sheet_exists='overlay') as writer:
-            df.to_excel(writer, index=False, header=False, startrow=writer.sheets['Sheet1'].max_row)
-    else:
-        df.to_excel(filename, index=False)
+def append_to_high_volume_excel(data, high_volume_file):
+    pairs_data = []
+    for pair in data.get('pairs', []):
+        formatted_timestamp = datetime.now().strftime('%m/%d/%y %H:%M')
+        pair_created_at = datetime.fromtimestamp(pair.get('pairCreatedAt', 0) / 1000).strftime('%m/%d/%y %H:%M')
+
+        pair_info = {
+                'Timestamp': formatted_timestamp,
+                'DEX ID': pair.get('dexId'),
+                'Base Token Address': pair['baseToken'].get('address'),
+                'Base Token Symbol': pair['baseToken'].get('symbol'),
+                'Price USD': pair.get('priceUsd'),
+                '5m Buys (Txn)': pair.get('txns', {}).get('m5', {}).get('buys'),
+                '5m Sells (Txn)': pair.get('txns', {}).get('m5', {}).get('sells'),
+                '1h Buys (Txn)': pair.get('txns', {}).get('h1', {}).get('buys'),
+                '1h Sells (Txn)': pair.get('txns', {}).get('h1', {}).get('sells'),
+                '6h Buys (Txn)': pair.get('txns', {}).get('h6', {}).get('buys'),
+                '6h Sells (Txn)': pair.get('txns', {}).get('h6', {}).get('sells'),
+                '24h Buys (Txn)': pair.get('txns', {}).get('h24', {}).get('buys'),
+                '24h Sells (Txn)': pair.get('txns', {}).get('h24', {}).get('sells'),
+                '24h Buy-Sells (Txn)': pair.get('txns', {}).get('h24', {}).get('buys', 0) - pair.get('txns', {}).get('h24', {}).get('sells', 0),
+                'Volume 5m': pair.get('volume', {}).get('m5'),
+                'Volume 1h': pair.get('volume', {}).get('h1'),
+                'Volume 6h': pair.get('volume', {}).get('h6'),
+                'Price Change 5m': pair.get('priceChange', {}).get('m5'),
+                'Price Change 1h': pair.get('priceChange', {}).get('h1'),
+                'Price Change 6h': pair.get('priceChange', {}).get('h6'),
+                'FDV': pair.get('fdv'),
+                'Price Change 24h': pair.get('priceChange', {}).get('h24'),
+                'Volume 24h': pair.get('volume', {}).get('h24'),
+                'Liquidity USD': pair.get('liquidity', {}).get('usd'),
+                'pair_created_at' : pair_created_at,
+                'Website': pair.get('website_url')
+        }
+        pairs_data.append(pair_info)
+    
+    df = pd.DataFrame(pairs_data)
+    print(df)
+    try:
+        if not os.path.exists(high_volume_file):
+            df.to_excel(high_volume_file, index=False)
+        else:
+            with pd.ExcelWriter(high_volume_file, mode='a', engine='openpyxl', if_sheet_exists='replace') as writer:
+                startrow = writer.sheets['Sheet1'].max_row
+                
+                df.to_excel(writer, index=False, header=False, startrow=startrow)
+        print("Saved to high volume  success!")
+
+    except Exception as e:
+        print(e)
+
+
 
 async def robust_websocket_listener_task(attempts=3, delay=10):
     attempt = 0
