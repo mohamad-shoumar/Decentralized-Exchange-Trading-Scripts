@@ -9,7 +9,7 @@ import pandas as pd
 from datetime import datetime,timedelta
 import os
 from openpyxl import load_workbook
-
+import json
 import asyncio
 from typing import List, AsyncIterator, Tuple, Iterator
 from asyncstdlib import enumerate
@@ -26,13 +26,13 @@ from solana.rpc.api import Client
 from solana.exceptions import SolanaRpcException
 from websockets.exceptions import ConnectionClosedError, ProtocolError
 from httpx import AsyncClient
-
 # Type hinting imports
 from solana.rpc.commitment import Commitment
 from solana.rpc.websocket_api import SolanaWsClientProtocol
 from solders.rpc.responses import RpcLogsResponse, SubscriptionResult, LogsNotification, GetTransactionResp
 from solders.signature import Signature
 from solders.transaction_status import UiPartiallyDecodedInstruction, ParsedInstruction
+from dotenv import load_dotenv
 
 # Raydium Liquidity Pool V4
 RaydiumLPV4 = "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8"
@@ -44,14 +44,37 @@ log_instruction = "initialize2"
 seen_signatures = set()
 seen_tokens_filename = 'seen_tokens.txt'
 high_volume_tokens = {}
+load_dotenv()
+
 # Init logging
 logging.basicConfig(filename='app.log', filemode='a', level=logging.DEBUG)
 # Writes responses from socket to messages.json
 # Writes responses from http req to  transactions.json
-filename = 'C:\\Users\\\Administrator\\\Documents\\token_info.xlsx'
-high_volume_file = 'C:\\Users\\\Administrator\\\Documents\\high_volume.xlsx'
+# filename = 'C:\\Users\\\User\\\Documents\\token_info.xlsx'
+# high_volume_file = 'C:\\Users\\\User\\\Documents\\high_volume.xlsx'
+filename = os.getenv('FILE_PATH')
+high_volume_file = os.getenv('VOLUME_FILE_PATH')
 all_tokens_filename = 'all_tokens.txt'
 
+
+def save_seen_tokens(tokens, filename):
+    """Save the seen tokens list to a file."""
+    with open(filename, 'w') as file:
+        for token in tokens:
+            file.write(f"{token}\n")
+
+def save_high_volume_tokens(tokens, filename="high_volume_tokens.json"):
+    """Save the high volume tokens dictionary to a file."""
+    try:
+        with open(filename, 'w') as f:
+            json.dump(tokens, f, default=str)
+        print("High volume tokens saved successfully.")
+    except Exception as e:
+        print(f"Failed to save high volume tokens: {e}")
+async def periodically_save_state():
+    while True:
+        await asyncio.sleep(60)  
+        save_high_volume_tokens(high_volume_tokens)   
 def load_all_tokens(filename):
     """Load all tokens from a file."""
     try:
@@ -68,12 +91,22 @@ def load_seen_tokens(filename):
             return tokens
     except FileNotFoundError:
         return []
-def save_seen_tokens(tokens, filename):
-    """Save the seen tokens list to a file."""
-    with open(filename, 'w') as file:
-        for token in tokens:
-            file.write(f"{token}\n")
-            
+def load_high_volume_tokens(filename="high_volume_tokens.json"):
+    """Load the high volume tokens dictionary from a file."""
+    try:
+        with open(filename, 'r') as f:
+            tokens = json.load(f)
+            # Convert timestamp strings back to datetime objects
+            for token, details in tokens.items():
+                if 'timestamp' in details:
+                    details['timestamp'] = datetime.fromisoformat(details['timestamp'])
+            return tokens
+    except FileNotFoundError:
+        print("No previous high volume tokens file found. Starting fresh.")
+        return {}
+    except Exception as e:
+        print(f"Failed to load high volume tokens: {e}")
+        return {}   
 seen_tokens = load_seen_tokens(seen_tokens_filename)
 all_tokens = load_all_tokens(all_tokens_filename)
 
@@ -104,8 +137,8 @@ async def websocket_listener_task():
 async def main():
     listener_task = asyncio.create_task(robust_websocket_listener_task())
     dexscreener_task = asyncio.create_task(call_dexscreener_api())
-    await asyncio.gather(listener_task, dexscreener_task)
-
+    save_state_task = asyncio.create_task(periodically_save_state())
+    await asyncio.gather(listener_task, dexscreener_task, save_state_task)
 
 async def subscribe_to_logs(websocket: SolanaWsClientProtocol, 
                             mentions: RpcTransactionLogsFilterMentions,
@@ -284,10 +317,9 @@ def get_tokens_info(
         save_all_tokens(all_tokens, all_tokens_filename)
     if str(Token0) not in high_volume_tokens:
         high_volume_tokens[str(Token0)] = {'timestamp': datetime.now(), 'met_criteria': False}
-        print(high_volume_tokens)
+
     if str(Token1) not in high_volume_tokens and str(Token1) != SOL_TOKEN_ADDRESS:
         high_volume_tokens[str(Token1)] = {'timestamp': datetime.now(), 'met_criteria': False}
-        print(high_volume_tokens)
 
     # Start logging
     logging.info("find LP !!!")
@@ -295,7 +327,11 @@ def get_tokens_info(
     # End logging
     return (Token0, Token1, Pair)
 
-
+def remove_token_from_high_volume(token_address):
+    if token_address in high_volume_tokens:
+        del high_volume_tokens[token_address]
+        save_high_volume_tokens(high_volume_tokens)
+        print(f"Token {token_address} removed from high volume tracking due to price drop.")
 
 async def call_dexscreener_api():
     batch_size = 30
@@ -319,17 +355,22 @@ async def call_dexscreener_api():
                             token_address = pair['baseToken'].get('address')
                             volume_5m = pair.get('volume', {}).get('m5', 0)
                             print(volume_5m)
+                            price_change_5m = pair.get('priceChange', {}).get('m5', 0) 
+
                             price_change_h24 = pair.get('priceChange', {}).get('h24', 0)
                             if (token_address in high_volume_tokens and
-                                not high_volume_tokens[token_address]['met_criteria'] and
-                                datetime.now() - high_volume_tokens[token_address]['timestamp'] <= timedelta(minutes=15) ):
+                                    not high_volume_tokens[token_address]['met_criteria'] and
+                                    datetime.now() - high_volume_tokens[token_address]['timestamp'] <= timedelta(minutes=15) and
+                                    volume_5m > 150): 
                                 high_volume_tokens[token_address]['met_criteria'] = True
-                                append_to_high_volume_excel(pair, high_volume_file)
+                                append_to_high_volume_excel(data, high_volume_file)
+                            elif (token_address in high_volume_tokens and price_change_5m < -10 and datetime.now() - high_volume_tokens[token_address]['timestamp'] <= timedelta(minutes=15)):
+                                remove_token_from_high_volume(token_address)
                             if price_change_h24 < -90:
                                 if token_address in seen_tokens:
                                     seen_tokens.remove(token_address)
                                     print(f"Removed token {token_address} due to price change {price_change_h24}%")
-                        print(data)
+                        # print(data)
                         append_to_excel(data, filename)   
 
                         save_seen_tokens(seen_tokens, seen_tokens_filename)  
@@ -337,7 +378,7 @@ async def call_dexscreener_api():
                     logging.error(f"Error fetching data from DexScreener: {e}")
                 await asyncio.sleep(1)  
         
-        await asyncio.sleep(120)
+        await asyncio.sleep(60)
 
 def print_table(tokens: Tuple[Pubkey, Pubkey, Pubkey]) -> None:
     data = [
@@ -434,19 +475,17 @@ def append_to_high_volume_excel(data, high_volume_file):
                 'Website': pair.get('website_url')
         }
         pairs_data.append(pair_info)
-    
-    df = pd.DataFrame(pairs_data)
-    print(df)
+
+    # df = pd.DataFrame(pairs_data)
+    df = pd.DataFrame([pair_info])
     try:
         if not os.path.exists(high_volume_file):
             df.to_excel(high_volume_file, index=False)
         else:
-            with pd.ExcelWriter(high_volume_file, mode='a', engine='openpyxl', if_sheet_exists='replace') as writer:
-                startrow = writer.sheets['Sheet1'].max_row
-                
-                df.to_excel(writer, index=False, header=False, startrow=startrow)
-        print("Saved to high volume  success!")
+            with pd.ExcelWriter(high_volume_file, mode='a', engine='openpyxl', if_sheet_exists='overlay') as writer:
+                df.to_excel(writer, index=False, header=not bool(writer.sheets), startrow=writer.sheets['Sheet1'].max_row if 'Sheet1' in writer.sheets else 0)
 
+        print("Data saved to high volume file successfully!")
     except Exception as e:
         print(e)
 
@@ -469,5 +508,6 @@ async def robust_websocket_listener_task(attempts=3, delay=10):
 
 if __name__ == "__main__":
     RaydiumLPV4 = Pubkey.from_string(RaydiumLPV4)
+    high_volume_tokens = load_high_volume_tokens()
     asyncio.run(main())
     
