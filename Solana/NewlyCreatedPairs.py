@@ -50,10 +50,9 @@ load_dotenv()
 logging.basicConfig(filename='app.log', filemode='a', level=logging.DEBUG)
 # Writes responses from socket to messages.json
 # Writes responses from http req to  transactions.json
-# filename = 'C:\\Users\\\User\\\Documents\\token_info.xlsx'
-# high_volume_file = 'C:\\Users\\\User\\\Documents\\high_volume.xlsx'
+
 filename = os.getenv('FILE_PATH')
-high_volume_file = os.getenv('VOLUME_FILE_PATH')
+high_volume_file = 'C:/Users/Administrator/Documents/high_volume.xlsx'
 all_tokens_filename = 'all_tokens.txt'
 
 
@@ -96,7 +95,6 @@ def load_high_volume_tokens(filename="high_volume_tokens.json"):
     try:
         with open(filename, 'r') as f:
             tokens = json.load(f)
-            # Convert timestamp strings back to datetime objects
             for token, details in tokens.items():
                 if 'timestamp' in details:
                     details['timestamp'] = datetime.fromisoformat(details['timestamp'])
@@ -135,11 +133,34 @@ async def websocket_listener_task():
                 break
             
 async def main():
-    listener_task = asyncio.create_task(robust_websocket_listener_task())
-    dexscreener_task = asyncio.create_task(call_dexscreener_api())
-    save_state_task = asyncio.create_task(periodically_save_state())
-    await asyncio.gather(listener_task, dexscreener_task, save_state_task)
+    try:
+        listener_task = asyncio.create_task(robust_websocket_listener_task())
+        dexscreener_task = asyncio.create_task(call_dexscreener_api())
+        high_volume_task = asyncio.create_task(DexScreenerHighVolume())
 
+        save_state_task = asyncio.create_task(periodically_save_state())
+        await asyncio.gather(listener_task, dexscreener_task,high_volume_task, save_state_task)
+    except KeyboardInterrupt:
+        print("Shutdown requested...cleaning up")
+        await cleanup()
+        print("Cleanup complete. Exiting now.")
+        return
+    
+async def cleanup():
+    """Perform cleanup operations before script exit."""
+    # Save high volume tokens to file
+    try:
+        save_high_volume_tokens(high_volume_tokens)
+        print("High volume tokens saved successfully.")
+    except Exception as e:
+        print(f"Failed to save high volume tokens: {e}")
+
+    # Save seen tokens to file
+    try:
+        save_seen_tokens(seen_tokens, seen_tokens_filename)
+        print("Seen tokens saved successfully.")
+    except Exception as e:
+        print(f"Failed to save seen tokens: {e}")
 async def subscribe_to_logs(websocket: SolanaWsClientProtocol, 
                             mentions: RpcTransactionLogsFilterMentions,
                             commitment: Commitment) -> int:
@@ -335,50 +356,74 @@ def remove_token_from_high_volume(token_address):
 
 async def call_dexscreener_api():
     batch_size = 30
-    update_interval = 30
-    timestamp_offset = timedelta(seconds=0)
     while True:
         for i in range(0, len(seen_tokens), batch_size):
             current_batch = seen_tokens[i:i + batch_size]
             if current_batch:
                 token_addresses = ','.join(str(token) for token in current_batch)
                 url = f"https://api.dexscreener.com/latest/dex/tokens/{token_addresses}"
-                print('url: ', url)
+ 
                 try:
                     async with AsyncClient() as client:
                         response = await client.get(url)
                         response.raise_for_status()
                         data = response.json()
                         for pair in data.get('pairs', []):
-                            print(high_volume_tokens)
-
                             token_address = pair['baseToken'].get('address')
                             volume_5m = pair.get('volume', {}).get('m5', 0)
-                            print(volume_5m)
                             price_change_5m = pair.get('priceChange', {}).get('m5', 0) 
-
+                            volume_1h = pair.get('volume', {}).get('h1', 0)
                             price_change_h24 = pair.get('priceChange', {}).get('h24', 0)
-                            if (token_address in high_volume_tokens and
-                                    not high_volume_tokens[token_address]['met_criteria'] and
-                                    datetime.now() - high_volume_tokens[token_address]['timestamp'] <= timedelta(minutes=15) and
-                                    volume_5m > 150): 
-                                high_volume_tokens[token_address]['met_criteria'] = True
-                                append_to_high_volume_excel(data, high_volume_file)
-                            elif (token_address in high_volume_tokens and price_change_5m < -10 and datetime.now() - high_volume_tokens[token_address]['timestamp'] <= timedelta(minutes=15)):
-                                remove_token_from_high_volume(token_address)
-                            if price_change_h24 < -90:
+                            if  price_change_h24 < -90:
                                 if token_address in seen_tokens:
                                     seen_tokens.remove(token_address)
-                                    print(f"Removed token {token_address} due to price change {price_change_h24}%")
-                        # print(data)
-                        append_to_excel(data, filename)   
+                                    print(f"Removed token {token_address} due to price change")
 
-                        save_seen_tokens(seen_tokens, seen_tokens_filename)  
+                        append_to_excel(data, filename) 
+
                 except Exception as e:
                     logging.error(f"Error fetching data from DexScreener: {e}")
                 await asyncio.sleep(1)  
         
-        await asyncio.sleep(60)
+        await asyncio.sleep(5)
+
+
+async def DexScreenerHighVolume():
+    while True:
+        # Adjust the call to pass the list of pairs directly
+        # Instead of calling append_to_high_volume_excel([pair], high_volume_file)
+        # You should prepare the list of pairs based on the criteria and then call it once per all pairs meeting criteria
+
+        tokens_to_process = [token for token, details in high_volume_tokens.items() if details['met_criteria']]
+        if tokens_to_process:
+            token_addresses = ','.join(tokens_to_process)
+            url = f"https://api.dexscreener.com/latest/dex/tokens/{token_addresses}"
+            print(url)
+            try:
+                async with AsyncClient() as client:
+                    response = await client.get(url)
+                    response.raise_for_status()
+                    data = response.json()
+                    # print(data)
+                    pairs_meeting_criteria = [
+                        pair for pair in data.get('pairs', [])
+                        if pair['baseToken'].get('address') in tokens_to_process
+                        and float(pair.get('volume', {}).get('m5', 0)) > 150
+                    ]
+                    if pairs_meeting_criteria:
+                        append_to_high_volume_excel(pairs_meeting_criteria, high_volume_file)
+                    try:
+                        for pair in data.get('pairs', []):
+                            token_address = pair['baseToken'].get('address')
+                            if token_address in tokens_to_process:
+                                print(token_address)
+                                pairs_meeting_criteria = [pair for pair in data.get('pairs', []) if pair['baseToken'].get('address') in tokens_to_process]
+                        append_to_high_volume_excel(pairs_meeting_criteria, high_volume_file)
+                    except Exception as e:
+                        logging.error(f"Error savign high volume: {e}")
+            except Exception as e:
+                logging.error(f"Error fetching data from DexScreener for high volume tokens: {e}")
+        await asyncio.sleep(5)
 
 def print_table(tokens: Tuple[Pubkey, Pubkey, Pubkey]) -> None:
     data = [
@@ -394,6 +439,7 @@ def print_table(tokens: Tuple[Pubkey, Pubkey, Pubkey]) -> None:
         print("│".join(f" {str(row[col]).ljust(15)} " for col in header))
 
 def append_to_excel(data, filename):
+
     pairs_data = []
     for pair in data.get('pairs', []):
         formatted_timestamp = datetime.now().strftime('%m/%d/%y %H:%M')
@@ -440,55 +486,114 @@ def append_to_excel(data, filename):
     except Exception as e:
         print(e)
 
-def append_to_high_volume_excel(data, high_volume_file):
+# def append_to_high_volume_excel(data, high_volume_file):
+#     pairs_data = []
+#     print(f'calling append{data},{high_volume_file},')
+#     for pair in data.get('pairs', []):
+#         token_address = pair['baseToken'].get('address')
+#         if token_address in high_volume_tokens and high_volume_tokens[token_address]['met_criteria']:
+#             formatted_timestamp = datetime.now().strftime('%m/%d/%y %H:%M')
+#             pair_created_at = datetime.fromtimestamp(pair.get('pairCreatedAt', 0) / 1000).strftime('%m/%d/%y %H:%M')
+
+#             pair_info = {
+#                     'Timestamp': formatted_timestamp,
+#                     'DEX ID': pair.get('dexId'),
+#                     'Base Token Address': pair['baseToken'].get('address'),
+#                     'Base Token Symbol': pair['baseToken'].get('symbol'),
+#                     'Price USD': pair.get('priceUsd'),
+#                     '5m Buys (Txn)': pair.get('txns', {}).get('m5', {}).get('buys'),
+#                     '5m Sells (Txn)': pair.get('txns', {}).get('m5', {}).get('sells'),
+#                     '1h Buys (Txn)': pair.get('txns', {}).get('h1', {}).get('buys'),
+#                     '1h Sells (Txn)': pair.get('txns', {}).get('h1', {}).get('sells'),
+#                     '6h Buys (Txn)': pair.get('txns', {}).get('h6', {}).get('buys'),
+#                     '6h Sells (Txn)': pair.get('txns', {}).get('h6', {}).get('sells'),
+#                     '24h Buys (Txn)': pair.get('txns', {}).get('h24', {}).get('buys'),
+#                     '24h Sells (Txn)': pair.get('txns', {}).get('h24', {}).get('sells'),
+#                     '24h Buy-Sells (Txn)': pair.get('txns', {}).get('h24', {}).get('buys', 0) - pair.get('txns', {}).get('h24', {}).get('sells', 0),
+#                     'Volume 5m': pair.get('volume', {}).get('m5'),
+#                     'Volume 1h': pair.get('volume', {}).get('h1'),
+#                     'Volume 6h': pair.get('volume', {}).get('h6'),
+#                     'Price Change 5m': pair.get('priceChange', {}).get('m5'),
+#                     'Price Change 1h': pair.get('priceChange', {}).get('h1'),
+#                     'Price Change 6h': pair.get('priceChange', {}).get('h6'),
+#                     'FDV': pair.get('fdv'),
+#                     'Price Change 24h': pair.get('priceChange', {}).get('h24'),
+#                     'Volume 24h': pair.get('volume', {}).get('h24'),
+#                     'Liquidity USD': pair.get('liquidity', {}).get('usd'),
+#                     'pair_created_at' : pair_created_at,
+#                     'Website': pair.get('website_url')
+#             }
+#             pairs_data.append(pair_info)
+#     df = pd.DataFrame(pairs_data)
+#     try:
+#         if os.path.exists(high_volume_file) and os.path.getsize(high_volume_file) > 0:
+#             with pd.ExcelWriter(high_volume_file, engine='openpyxl', mode='a', if_sheet_exists='overlay') as writer:
+#                 try:
+#                     last_row = pd.read_excel(high_volume_file).shape[0]
+#                 except ValueError:
+#                     last_row = 0
+
+#                 df.to_excel(writer, sheet_name='Sheet1', startrow=last_row + 1, index=False, header=False)
+#                 print("Saved to high volume token info success!")
+
+#         else:
+#             df.to_excel(high_volume_file, index=False)
+#             print("Saved to high volume token info success!")
+    
+#     except Exception as e:
+#         print(e)
+
+
+def append_to_high_volume_excel(pairs, high_volume_file):
     pairs_data = []
-    for pair in data.get('pairs', []):
-        formatted_timestamp = datetime.now().strftime('%m/%d/%y %H:%M')
-        pair_created_at = datetime.fromtimestamp(pair.get('pairCreatedAt', 0) / 1000).strftime('%m/%d/%y %H:%M')
+    for pair in pairs:
+        token_address = pair['baseToken'].get('address')
+        if token_address in high_volume_tokens and high_volume_tokens[token_address]['met_criteria']:
+            formatted_timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            pair_created_at = datetime.fromtimestamp(pair.get('pairCreatedAt', 0) / 1000).strftime('%Y-%m-%d %H:%M:%S')
 
-        pair_info = {
-                'Timestamp': formatted_timestamp,
-                'DEX ID': pair.get('dexId'),
-                'Base Token Address': pair['baseToken'].get('address'),
-                'Base Token Symbol': pair['baseToken'].get('symbol'),
-                'Price USD': pair.get('priceUsd'),
-                '5m Buys (Txn)': pair.get('txns', {}).get('m5', {}).get('buys'),
-                '5m Sells (Txn)': pair.get('txns', {}).get('m5', {}).get('sells'),
-                '1h Buys (Txn)': pair.get('txns', {}).get('h1', {}).get('buys'),
-                '1h Sells (Txn)': pair.get('txns', {}).get('h1', {}).get('sells'),
-                '6h Buys (Txn)': pair.get('txns', {}).get('h6', {}).get('buys'),
-                '6h Sells (Txn)': pair.get('txns', {}).get('h6', {}).get('sells'),
-                '24h Buys (Txn)': pair.get('txns', {}).get('h24', {}).get('buys'),
-                '24h Sells (Txn)': pair.get('txns', {}).get('h24', {}).get('sells'),
-                '24h Buy-Sells (Txn)': pair.get('txns', {}).get('h24', {}).get('buys', 0) - pair.get('txns', {}).get('h24', {}).get('sells', 0),
-                'Volume 5m': pair.get('volume', {}).get('m5'),
-                'Volume 1h': pair.get('volume', {}).get('h1'),
-                'Volume 6h': pair.get('volume', {}).get('h6'),
-                'Price Change 5m': pair.get('priceChange', {}).get('m5'),
-                'Price Change 1h': pair.get('priceChange', {}).get('h1'),
-                'Price Change 6h': pair.get('priceChange', {}).get('h6'),
-                'FDV': pair.get('fdv'),
-                'Price Change 24h': pair.get('priceChange', {}).get('h24'),
-                'Volume 24h': pair.get('volume', {}).get('h24'),
-                'Liquidity USD': pair.get('liquidity', {}).get('usd'),
-                'pair_created_at' : pair_created_at,
-                'Website': pair.get('website_url')
-        }
-        pairs_data.append(pair_info)
-
-    # df = pd.DataFrame(pairs_data)
-    df = pd.DataFrame([pair_info])
-    try:
-        if not os.path.exists(high_volume_file):
-            df.to_excel(high_volume_file, index=False)
-        else:
-            with pd.ExcelWriter(high_volume_file, mode='a', engine='openpyxl', if_sheet_exists='overlay') as writer:
-                df.to_excel(writer, index=False, header=not bool(writer.sheets), startrow=writer.sheets['Sheet1'].max_row if 'Sheet1' in writer.sheets else 0)
-
-        print("Data saved to high volume file successfully!")
-    except Exception as e:
-        print(e)
-
+            pair_info = {
+                    'Timestamp': formatted_timestamp,
+                    'DEX ID': pair.get('dexId'),
+                    'Base Token Address': pair['baseToken'].get('address'),
+                    'Base Token Symbol': pair['baseToken'].get('symbol'),
+                    'Price USD': pair.get('priceUsd'),
+                    '5m Buys (Txn)': pair.get('txns', {}).get('m5', {}).get('buys'),
+                    '5m Sells (Txn)': pair.get('txns', {}).get('m5', {}).get('sells'),
+                    '1h Buys (Txn)': pair.get('txns', {}).get('h1', {}).get('buys'),
+                    '1h Sells (Txn)': pair.get('txns', {}).get('h1', {}).get('sells'),
+                    '6h Buys (Txn)': pair.get('txns', {}).get('h6', {}).get('buys'),
+                    '6h Sells (Txn)': pair.get('txns', {}).get('h6', {}).get('sells'),
+                    '24h Buys (Txn)': pair.get('txns', {}).get('h24', {}).get('buys'),
+                    '24h Sells (Txn)': pair.get('txns', {}).get('h24', {}).get('sells'),
+                    '24h Buy-Sells (Txn)': pair.get('txns', {}).get('h24', {}).get('buys', 0) - pair.get('txns', {}).get('h24', {}).get('sells', 0),
+                    'Volume 5m': pair.get('volume', {}).get('m5'),
+                    'Volume 1h': pair.get('volume', {}).get('h1'),
+                    'Volume 6h': pair.get('volume', {}).get('h6'),
+                    'Price Change 5m': pair.get('priceChange', {}).get('m5'),
+                    'Price Change 1h': pair.get('priceChange', {}).get('h1'),
+                    'Price Change 6h': pair.get('priceChange', {}).get('h6'),
+                    'FDV': pair.get('fdv'),
+                    'Price Change 24h': pair.get('priceChange', {}).get('h24'),
+                    'Volume 24h': pair.get('volume', {}).get('h24'),
+                    'Liquidity USD': pair.get('liquidity', {}).get('usd'),
+                    'pair_created_at' : pair_created_at,
+                    'Website': pair.get('website_url')
+            }
+            pairs_data.append(pair_info)
+    
+    df = pd.DataFrame(pairs_data)
+    if not df.empty:
+        try:
+            if os.path.exists(high_volume_file) and os.path.getsize(high_volume_file) > 0:
+                with pd.ExcelWriter(high_volume_file, engine='openpyxl', mode='a', if_sheet_exists='overlay') as writer:
+                    df.to_excel(writer, sheet_name='Sheet1', startrow=writer.sheets['Sheet1'].max_row, index=False, header=False)
+            else:
+                df.to_excel(high_volume_file, index=False)
+                print('created excel file')
+            print("Saved to high volume token info success!")
+        except Exception as e:
+            print(e)
 
 
 async def robust_websocket_listener_task(attempts=3, delay=10):
@@ -509,5 +614,7 @@ async def robust_websocket_listener_task(attempts=3, delay=10):
 if __name__ == "__main__":
     RaydiumLPV4 = Pubkey.from_string(RaydiumLPV4)
     high_volume_tokens = load_high_volume_tokens()
-    asyncio.run(main())
-    
+    try:
+        asyncio.run(main())
+    except Exception as e:
+        print(f"An error occurred: {e}")
