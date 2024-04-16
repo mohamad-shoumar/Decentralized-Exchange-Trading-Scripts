@@ -39,8 +39,8 @@ load_dotenv()
 
 # Raydium Liquidity Pool V4
 RaydiumLPV4 = "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8"
-URI = "https://mainnet.helius-rpc.com/?api-key=b0030426-49da-4a2a-ab94-ef8961452c7c"  # "https://api.devnet.solana.com" | "https://api.mainnet-beta.solana.com"
-WSS = "wss://mainnet.helius-rpc.com/?api-key=b0030426-49da-4a2a-ab94-ef8961452c7c"  # "wss://api.devnet.solana.com" | "wss://api.mainnet-beta.solana.com"
+URI = "https://mainnet.helius-rpc.com/?api-key=17b75a60-92a4-4da1-8db3-a742674e6a9b"  # "https://api.devnet.solana.com" | "https://api.mainnet-beta.solana.com"
+WSS = "wss://mainnet.helius-rpc.com/?api-key=17b75a60-92a4-4da1-8db3-a742674e6a9b"  # "wss://api.devnet.solana.com" | "wss://api.mainnet-beta.solana.com"
 solana_client = Client(URI)
 # Raydium function call name, look at raydium-amm/program/src/instruction.rs
 log_instruction = "initialize2"
